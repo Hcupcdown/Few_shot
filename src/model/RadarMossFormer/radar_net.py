@@ -45,9 +45,9 @@ class RadarNet(nn.Module):
         self.adpter = nn.Sequential(
             nn.Linear(256, 256),
             nn.ReLU(),
-            nn.Linear(256, 256),
-            nn.ReLU())
-    def forward(self, x, label):
+            nn.Linear(256, 256))
+    
+    def extract_radar_feature(self, x):
         x = rearrange(x, "b l -> b () l")
         x = self.in_conv(x)
         x = x.transpose(-1, -2)
@@ -58,7 +58,16 @@ class RadarNet(nn.Module):
         x = self.avergae_pool(x)
         x = x.squeeze(-1)
         person_feature = self.adpter(x)
+        return person_feature
+
+    def few_shot_init_embedding(self, x, label):
+        person_feature = self.extract_radar_feature(x)
+        self.person_embedding.weight.data[label] = person_feature
+
+    def forward(self, x, label):
+
+        person_feature = self.extract_radar_feature(x)
         gt_person_feature = self.person_embedding(label)
         if self.train:
-            embendding_loss = F.mse_loss(person_feature, gt_person_feature)
+            embendding_loss = F.cosine_similarity(person_feature, gt_person_feature)
         return gt_person_feature, embendding_loss
