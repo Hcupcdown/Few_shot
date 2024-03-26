@@ -59,8 +59,8 @@ class RadarMossFormer(nn.Module):
         self.radar_net = RadarNet()
 
         self.select_glu = FusionGLU(hidden_dim)
-        # self.cross_flash = CorssFLASHTransformer(dim=hidden_dim,
-        #                                          depth=2)
+        self.cross_flash = CorssFLASHTransformer(dim=hidden_dim,
+                                                 depth=2)
         self.glu = GLU(hidden_dim)
         self.out_point_wise_conv = nn.Sequential(
             nn.Conv1d(hidden_dim, hidden_dim, kernel_size=1),
@@ -97,13 +97,14 @@ class RadarMossFormer(nn.Module):
         x_MFB_out = x_MFB_in.transpose(-1, -2)
         x_MFB_out = F.relu(x_MFB_out)
         # radar net
-        radar_feature, embedding_loss = self.radar_net(radar, label)
-        radar_feature = radar_feature.transpose(-1, -2)
-        x_extract = self.select_glu(x_MFB_out, radar_feature)
+        time_feature, person_feature, embedding_loss = self.radar_net(radar, label)
+        person_feature = person_feature.transpose(-1, -2)
+        x_extract = self.select_glu(x_MFB_out, person_feature)
+        time_feature = time_feature.transpose(-1, -2)
+        time_feature = F.interpolate(time_feature, x_extract.shape[-1], mode='nearest')
         x_split = x_extract.transpose(-1, -2)
-        # radar_feature = radar_feature.transpose(-1, -2)
-        # radar_feature = radar_feature.repeat(1, x_split.shape[-2], 1)
-        # x_split = self.cross_flash(x_split, radar_feature)
+        time_feature = time_feature.transpose(-1, -2)
+        x_split = self.cross_flash(x_split, time_feature)
         for i in range(self.MFB_num2):
             x_split = getattr(self, f"2_MFB_{i}")(x_split)
         x_split = x_split.transpose(-1, -2)

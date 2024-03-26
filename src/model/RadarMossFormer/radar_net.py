@@ -40,8 +40,8 @@ class RadarNet(nn.Module):
                                                       dropout=0.1))
         self.person_embedding = nn.Embedding(20, 256)
         # end for
-        self.avergae_pool = nn.AdaptiveAvgPool1d(1)
-
+        self.average_pool = nn.AdaptiveAvgPool1d(1)
+        self.cosin_threshold = 0.1
         self.adpter = nn.Sequential(
             nn.Linear(256, 256),
             nn.ReLU(),
@@ -54,20 +54,30 @@ class RadarNet(nn.Module):
         x = self.ln1(x)
         for i in range(1):
             x = getattr(self, f"1_MFB_{i}")(x)
-        x = x.transpose(-1, -2)
-        x = self.avergae_pool(x)
-        x = x.squeeze(-1)
-        person_feature = self.adpter(x)
-        return person_feature
+        person_feature = x.transpose(-1, -2)
+        person_feature = self.average_pool(person_feature)
+        person_feature = person_feature.squeeze(-1)
+        person_feature = self.adpter(person_feature)
+        return person_feature, x
+
+    def mask_embedding(self, time_feature, embedding):
+
+        embedding = embedding.unsqueeze(1)
+        cosin_similarity = F.cosine_similarity(time_feature, embedding, dim=-1)
+        mask = cosin_similarity > self.cosin_threshold
+        mask = mask.unsqueeze(-1)
+        time_feature = time_feature * mask + embedding * (~mask)
+        return time_feature
 
     def few_shot_init_embedding(self, x, label):
-        person_feature = self.extract_radar_feature(x)
+
+        person_feature, _ = self.extract_radar_feature(x)
         self.person_embedding.weight.data[label] = person_feature
 
     def forward(self, x, label):
 
-        person_feature = self.extract_radar_feature(x)
+        person_feature, time_feature = self.extract_radar_feature(x)
         gt_person_feature = self.person_embedding(label)
-        if self.train:
-            embendding_loss = F.cosine_similarity(person_feature, gt_person_feature)
-        return gt_person_feature, embendding_loss
+        time_feature = self.mask_embedding(time_feature, person_feature)
+        embendding_loss = -F.cosine_similarity(person_feature, gt_person_feature)
+        return time_feature, person_feature, embendding_loss
