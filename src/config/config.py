@@ -11,11 +11,11 @@ def get_config():
     # dataset
     parser.add_argument('--train', type=str, default=r'G:\my_radar_sound\few_shot_data\train', help='Train path')
     parser.add_argument('--few_shot_dir', type=str, default=r'G:\my_radar_sound\few_shot_data\few_shot\16', help='few_shot data path')
-    parser.add_argument('--few_shot_val', type=str, default=r"G:\my_radar_sound\few_shot_data\test\16", help='few_shot test data')
+    parser.add_argument('--few_shot_val', type=str, default=r"G:\my_radar_sound\few_shot_data\test\seen_noisy\16", help='few_shot test data')
     parser.add_argument('--num_shot', type=int, default=1, help='few_shot num')
 
     #basic 
-    parser.add_argument('--model_path', type=str, default='log/24-03-23-20-02-58/model/best_train.pth', help='Model path')
+    parser.add_argument('--model_path', type=str, default='log/24-03-26-22-07-49/model/best_val.pth', help='Model path')
     parser.add_argument('--learning_rate', type=float, default=1e-4, help='Learning rate')
     parser.add_argument('--epoch', type=int, default=300, help='Epoch')
     parser.add_argument('--batch_size', type=int, default=1, help='Batch size')

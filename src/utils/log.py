@@ -78,7 +78,6 @@ class Log():
             self.add_image(cate, global_step, "HWC", **spec_imags)
     
     def gen_mask_img(self, x):
-        print(x.shape)
         plt.plot(x.detach().cpu().numpy())
         plt.savefig(os.path.join(self.cache_dir, "spec.png"), dpi=300)
         plt.close()

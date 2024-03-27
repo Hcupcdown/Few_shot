@@ -6,7 +6,6 @@ import numpy as np
 import torch
 import torchaudio
 from torch.nn import functional as F
-from torch.utils.data import DataLoader
 
 
 def random_mix_audio(audio1, audio2):
@@ -57,7 +56,8 @@ class SeparDataset:
 
         # 随机选择一个不同人的噪声
         noisy_person_id = random.randint(0, self.person_num-2)
-        noisy_person_id = noisy_person_id if noisy_person_id < person_id else noisy_person_id + 1
+        noisy_person_id = noisy_person_id if noisy_person_id < person_id\
+                        else noisy_person_id + 1
         noisy_sample_id = random.randint(0, self.sample_per_person-1)
         noisy_audio_path = self.audio_data_map[noisy_person_id][noisy_sample_id]
         
@@ -150,8 +150,12 @@ class FewShotTestDataset:
                              dtype = torch.float32)
         label = sample_name.split("-")[0]
         label = int(label.split("_")[0])
-        clean_audio_file = os.path.join(self.dataset_dir, f"s{1}", sample_name.replace("npy", "wav"))
-        mix_audio_file = os.path.join(self.dataset_dir, f"mix_clean", sample_name.replace("npy", "wav"))
+        clean_audio_file = os.path.join(self.dataset_dir,
+                                        f"s{1}",
+                                        sample_name.replace("npy", "wav"))
+        mix_audio_file = os.path.join(self.dataset_dir,
+                                      f"mix_clean",
+                                      sample_name.replace("npy", "wav"))
         clean_audio, _ = torchaudio.load(clean_audio_file)
         mix_audio, _ = torchaudio.load(mix_audio_file)
         return radar, clean_audio, mix_audio, torch.tensor(label)
@@ -159,38 +163,36 @@ class FewShotTestDataset:
     def __len__(self):
         return len(self.sample_list)
 
-def collate_fn(batch):
-    batch = [x for x in zip(*batch)]
-    radar, clean_audio, mix_audio, label = batch
 
-    return {
-        "radar":torch.stack(radar,0),
-        "clean":torch.stack(clean_audio,0),
-        "mix":torch.stack(mix_audio,0),
-        "label":torch.stack(label,0)
-        }
+class FewShotInitDataset:
 
-def build_dataloader(args, train = True):
-    val_loader = None
-    if args.few_shot:
-        val_dataset = FewShotTestDataset(args.few_shot_dataset['valset_dir'])
-        val_loader    = DataLoader(val_dataset,
-                               batch_size=1,
-                               shuffle=False,
-                               num_workers=args.num_worker,
-                               collate_fn=collate_fn)
-   
-    dataloader = {"val":val_loader}
-    if args.action == "train":
-        if args.few_shot:
-            train_dataset = FewShotDataset(**args.few_shot_dataset)
-        else:
-            train_dataset = SeparDataset(args.dataset_dir['train'])
-        train_loader  = DataLoader(train_dataset,
-                                   batch_size=args.batch_size,
-                                   shuffle=True,
-                                   num_workers=args.num_worker,
-                                   collate_fn=collate_fn)
-        dataloader = {"train":train_loader, "val":val_loader}
+    def __init__(self,
+                 few_shot_dir,
+                 num_shot,
+                 *args,
+                 **kwargs):
+        """
+        Initialize the Dataset object.
+
+        Args:
+            dataset_dir (str): The directory path of the dataset.
+        """
+        self.few_shot_dir = few_shot_dir
+        self.num_shot = num_shot
+        self.few_shot_data_list = os.listdir(os.path.join(few_shot_dir, "radar"))[:num_shot]
     
-    return dataloader
+    def __getitem__(self, index):
+
+        few_shot_data_file = self.few_shot_data_list[index]
+        radar_file = os.path.join(self.few_shot_dir,
+                                  "radar",
+                                  few_shot_data_file)
+
+        label = int(few_shot_data_file.split("_")[0])
+
+        radar = torch.tensor(np.load(radar_file),
+                             dtype = torch.float32)
+        return radar, torch.tensor(label)
+
+    def __len__(self):
+        return len(self.few_shot_data_list)

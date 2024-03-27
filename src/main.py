@@ -1,9 +1,8 @@
 import os
 
-from app import build_tester, build_trainer
+from app.bulider import build_dataloader, build_tester, build_trainer, bulid_model
 from config import *
 from data import *
-from model import bulid_model
 from utils import *
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"

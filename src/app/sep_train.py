@@ -16,7 +16,6 @@ class SepTrainer(Trainer):
 
     def __init__(self, model, data, args):
         super().__init__(model, data, args)
-        self.few_shot_init = args.few_shot
 
     def process_data(self, batch_data):
         radar = batch_data["radar"].to(self.args.device)
@@ -37,17 +36,16 @@ class SepTrainer(Trainer):
        
     def run_batch(self, batch_data):
         batch_data = self.process_data(batch_data)
-        if self.few_shot_init:
-            self.model.radar_net.few_shot_init_embedding(batch_data["radar"],
-                                                         batch_data["label"])
-            self.few_shot_init = False
+
         est_audio, embedding_loss = self.model(batch_data["mix_audio"],
                                                batch_data["radar"],
                                                batch_data["label"])
         est_loss = torch.mean(-sisnr(est_audio, batch_data["clean_audio"]))
-
-        loss = est_loss + embedding_loss *0.1
-
+        if embedding_loss:
+            loss = est_loss + embedding_loss *0.1
+        else:
+            loss = est_loss
+            embedding_loss = torch.tensor(0)
         loss = {
             "loss":loss,
             "est_loss":est_loss,

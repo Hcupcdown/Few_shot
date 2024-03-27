@@ -11,39 +11,22 @@ class Trainer():
 
         self.args = args
         self.model = model.to(args.device)
-        if args.checkpoint or args.few_shot:
-            self._load_checkpoint(args.model_path)
-        if args.few_shot:
-            print("few shot")
-            self._frzee_model_parameters()
 
         if args.action == "train":
             self.train_loader = data['train']
             self.log = Log(args)
-            self.optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), 
+            parameters = filter(lambda p: p.requires_grad, model.parameters())
+            self.optimizer = torch.optim.Adam(parameters, 
                                               lr=args.learning_rate)
         
             self.scheduler = ReduceLROnPlateau(self.optimizer, 
-                                           mode='min',
-                                           factor=0.5,
-                                           patience=2,
-                                           verbose=True)
+                                               mode='min',
+                                               factor=0.5,
+                                               patience=2,
+                                               verbose=True)
         self.val_loader = data['val']
         
         self.device = args.device
-    
-    def _frzee_model_parameters(self):
-        for p_name, param in self.model.named_parameters():
-            if "person_embedding" in p_name:
-                print("unfreeze:", p_name)
-                continue
-            param.requires_grad = False
-            print("freeze:", p_name)
-
-    def _load_checkpoint(self, model_path):
-        print("load checkpoint")
-        checkpoint = torch.load(model_path)
-        self.model.load_state_dict(checkpoint['state_dict'])
 
     def train(self):
         
