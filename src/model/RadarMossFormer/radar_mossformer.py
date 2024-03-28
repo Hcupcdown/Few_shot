@@ -30,8 +30,8 @@ class RadarMossFormer(nn.Module):
         """
         super().__init__()
         self.MFB_num = MFB_num
-        self.MFB_num1 = 2
-        self.MFB_num2 = 4
+        self.MFB_num1 = MFB_num
+        self.MFB_num2 = MFB_num
         self.in_conv = nn.Sequential(
             nn.Conv1d(in_dim,
                       hidden_dim,
@@ -107,7 +107,7 @@ class RadarMossFormer(nn.Module):
         if self.training:
             time_feature, person_feature, embedding_loss = self.radar_net(radar, label)
         else:
-            time_feature, person_feature = self.radar_net.inference(radar)
+            time_feature, person_feature = self.radar_net.inference(radar, label)
             embedding_loss = None
 
         person_feature = person_feature.transpose(-1, -2)

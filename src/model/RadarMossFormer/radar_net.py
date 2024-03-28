@@ -39,7 +39,7 @@ class RadarNet(nn.Module):
                                                       dropout=0.1))
 
         self.average_pool = nn.AdaptiveAvgPool1d(1)
-        self.cosin_threshold = 0.1
+        self.cosin_threshold = 0.3
         self.adpter = nn.Sequential(
             nn.Linear(256, 256),
             nn.ReLU(),
@@ -98,17 +98,20 @@ class RadarNet(nn.Module):
         self.person_embedding.weight.data[label] = embedding
     
     def inference(self,
-                  x:torch.tensor) -> torch.tensor:
+                  x:torch.tensor,
+                  label: torch.tensor) -> torch.tensor:
 
         person_feature, time_feature = self.extract_radar_feature(x)
-        weight = self.person_embedding.weight
-        cosin_similarity = F.cosine_similarity(person_feature, weight, dim=-1)
-        label = cosin_similarity.argmax(dim=-1)
-        person_embedding = weight[label]
-        person_embedding = person_embedding.unsqueeze(0)
+        # weight = self.person_embedding.weight
+        # cosin_similarity = F.cosine_similarity(person_feature, weight, dim=-1)
+        # label = cosin_similarity.argmax(dim=-1)
+        # person_embedding = weight[label]
+        # person_embedding = person_embedding.unsqueeze(0)
+        # person_feature, time_feature = self.extract_radar_feature(x)
+        person_embedding = self.person_embedding(label)
         time_feature = self.mask_embedding(time_feature, person_embedding)
         return time_feature, person_embedding
-    
+
     def forward(self,
                 x:torch.tensor,
                 label:torch.tensor) -> torch.tensor:

@@ -71,6 +71,72 @@ class SeparDataset:
         return self.sample_per_person * self.person_num
 
 
+class LibriDataset:
+
+
+    def __init__(self,
+                 dataset_dir,
+                 LibriSpeech_dir,
+                 only_clean = False,
+                 *args,
+                 **kwargs):
+        """
+        Initialize the Dataset object.
+
+        Args:
+            dataset_dir (str): The directory path of the dataset.
+        """
+        
+        self.dataset_dir = dataset_dir
+        self.audio_data_map = {}
+        self.radar_data_map = {}
+        self.sample_per_person = 100
+        self.only_clean = only_clean
+        for persoin_id in os.listdir(self.dataset_dir):
+            for sample_name in os.listdir(os.path.join(self.dataset_dir, persoin_id, "audio")):
+                temp_audio = os.path.join(self.dataset_dir, persoin_id, "audio", sample_name)
+                temp_radar = os.path.join(self.dataset_dir, persoin_id, "radar", sample_name.replace("wav", "npy"))
+                self.audio_data_map[int(persoin_id)] = self.audio_data_map.get(int(persoin_id), []) + [temp_audio]
+                self.radar_data_map[int(persoin_id)] = self.radar_data_map.get(int(persoin_id), []) + [temp_radar]
+        self.person_num = len(self.audio_data_map)
+        self.LibriSpeech_dir = LibriSpeech_dir
+        self.noise_list = []
+        for noise_file in os.listdir(LibriSpeech_dir):
+            self.noise_list.append(noise_file)
+        self.noise_len = len(self.noise_list)
+
+    def __getitem__(self, index):
+        sample_id = index % self.sample_per_person
+        person_id = index // self.sample_per_person
+        gt_audio_path = self.audio_data_map[person_id][sample_id]
+        gt_radar_path = self.radar_data_map[person_id][sample_id]
+        gt_audio, _ = torchaudio.load(gt_audio_path)
+        if self.only_clean:
+            return gt_audio
+
+        # 随机选择一个不同人的噪声
+        noisy_sample = random.randint(0, self.noise_len-1)
+        noisy_path = os.path.join(self.LibriSpeech_dir, self.noise_list[noisy_sample])
+        noisy_audio, _ = torchaudio.load(noisy_path)
+
+        # align the length of noisy_audio and gt_audio
+        noise_l = noisy_audio.shape[-1]
+        gt_audio_l = gt_audio.shape[-1]
+        if noise_l > gt_audio_l:
+            start = random.randint(0, noise_l-gt_audio_l)
+            noisy_audio = noisy_audio[..., start : start+gt_audio.shape[1]]
+        else:
+            noisy_audio = F.pad(noisy_audio, (0, gt_audio_l-noise_l))
+        
+        mix_audio = random_mix_audio(gt_audio, noisy_audio)
+
+        gt_radar = torch.tensor(np.load(gt_radar_path),
+                                dtype = torch.float32)
+        return gt_radar, gt_audio, mix_audio, torch.tensor(person_id)
+
+    def __len__(self):
+        return self.sample_per_person * self.person_num
+
 class FewShotDataset:
 
     def __init__(self,

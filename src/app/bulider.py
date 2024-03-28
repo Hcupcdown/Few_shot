@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import DataLoader
 
-from data import FewShotDataset, FewShotInitDataset, FewShotTestDataset, SeparDataset
+from data import FewShotDataset, FewShotInitDataset, FewShotTestDataset, LibriDataset
 from model import RadarMossFormer
 
 from .sep_train import SepTester, SepTrainer
@@ -33,7 +33,8 @@ def build_dataloader(args):
         if args.few_shot:
             train_dataset = FewShotDataset(**args.few_shot_dataset)
         else:
-            train_dataset = SeparDataset(args.dataset_dir['train'])
+            train_dataset = LibriDataset(args.dataset_dir['train'],
+                                         r"E:\LibriMix\Libri2Mix\wav8k\max\train-360\mix_single")
         train_loader  = DataLoader(train_dataset,
                                    batch_size=args.batch_size,
                                    shuffle=True,
