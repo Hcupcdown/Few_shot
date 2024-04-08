@@ -41,6 +41,7 @@ class SepTrainer(Trainer):
                                                batch_data["radar"],
                                                batch_data["label"])
         est_loss = torch.mean(-sisnr(est_audio, batch_data["clean_audio"]))
+        ori_sisnr = torch.mean(sisnr(batch_data["mix_audio"], batch_data["clean_audio"]))
         if embedding_loss:
             loss = est_loss + embedding_loss *0.1
         else:
@@ -49,7 +50,8 @@ class SepTrainer(Trainer):
         loss = {
             "loss":loss,
             "est_loss":est_loss,
-            "embedding_loss":embedding_loss
+            "embedding_loss":embedding_loss,
+            "ori_sisnr":ori_sisnr
         }
         return loss, est_audio / (torch.max(est_audio) + 1e-8)
 
@@ -74,13 +76,16 @@ class SepTester(SepTrainer):
         data_loader = self.val_loader
         total_loss = 0
         total_snr = 0
+        ori_sisnr = 0
         with torch.no_grad():
             for i, batch_data in enumerate(tqdm(data_loader)):
                 loss, est_audio = self.run_batch(batch_data)
                 total_loss += loss["loss"].item()
                 temp_snr = -loss["est_loss"].item()
+                ori_sisnr += loss["ori_sisnr"].item()
                 total_snr += temp_snr
                 self.save_wav(i, est_audio=est_audio,
                               clean_audio=batch_data["clean"],
                               noise_audio=batch_data["mix"])
+        print(f"ori_snr: {ori_sisnr/(i+1)}")
         print(f"snr: {total_snr/(i+1)}")

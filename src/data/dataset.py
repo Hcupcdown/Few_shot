@@ -11,7 +11,7 @@ from torch.nn import functional as F
 def random_mix_audio(audio1, audio2):
     audio1 = audio1 / (torch.max(audio1) + 1e-8)
     audio2 = audio2 / (torch.max(audio2) + 1e-8)
-    random_ratio = (random.random()+0.1)*2
+    random_ratio = (random.random()+0.1)*3
     mix_audio = audio1 + audio2*random_ratio
     mix_audio = mix_audio / (torch.max(mix_audio) + 1e-8)
     return mix_audio
@@ -69,6 +69,57 @@ class SeparDataset:
 
     def __len__(self):
         return self.sample_per_person * self.person_num
+
+class IGNLibriDataset:
+
+
+    def __init__(self,
+                 dataset_dir,
+                 only_clean = False,
+                 *args,
+                 **kwargs):
+        """
+        Initialize the Dataset object.
+
+        Args:
+            dataset_dir (str): The directory path of the dataset.
+        """
+        
+        self.dataset_dir = dataset_dir
+        self.sample_list = []
+        self.id_dict = {}
+        self.only_clean = only_clean
+        for sample_name in os.listdir(os.path.join(self.dataset_dir, "s1")):
+            self.sample_list.append(sample_name)
+            temp_id = sample_name.split("-")[0]
+            if temp_id in self.id_dict:
+                continue
+            else:
+                self.id_dict[temp_id] = len(self.id_dict)
+        print(len(self.id_dict))
+
+    def __getitem__(self, index):
+        gt_sample = self.sample_list[index]
+        gt_audio_path = os.path.join(self.dataset_dir, "s1", gt_sample)
+        gt_radar_path = os.path.join(self.dataset_dir, "s1_radar", gt_sample.replace("wav", "npy"))
+        gt_audio, _ = torchaudio.load(gt_audio_path)
+        if self.only_clean:
+            return gt_audio
+
+        # 随机选择一个不同人的噪声
+        noisy_person_id = random.randint(0, len(self.sample_list)-1)
+        noisy_audio_sample = self.sample_list[noisy_person_id]
+        noisy_audio_path = os.path.join(self.dataset_dir, "s2", noisy_audio_sample)
+        noisy_audio, _ = torchaudio.load(noisy_audio_path)
+        gt_radar = torch.tensor(np.load(gt_radar_path),
+                                dtype = torch.float32)
+        gt_radar = gt_radar.squeeze(0)
+        mix_audio = random_mix_audio(gt_audio, noisy_audio)
+        person_id = self.id_dict[gt_sample.split("-")[0]]
+        return gt_radar, gt_audio, mix_audio, torch.tensor(person_id)
+
+    def __len__(self):
+        return len(self.sample_list)
 
 
 class LibriDataset:
@@ -157,14 +208,6 @@ class FewShotDataset:
         self.noisy_dataset = SeparDataset(trainset_dir, only_clean = True)
         self.few_shot_data_list = os.listdir(os.path.join(few_shot_dir, "audio"))[:num_shot]
     
-    def random_mix_audio(self, audio1, audio2):
-        audio1 = audio1 / (torch.max(audio1) + 1e-8)
-        audio2 = audio2 / (torch.max(audio2) + 1e-8)
-        random_ratio = (random.random()+0.1)*2
-        mix_audio = audio1 + audio2*random_ratio
-        mix_audio = mix_audio / (torch.max(mix_audio) + 1e-8)
-        return mix_audio
-    
     def __getitem__(self, index):
 
         # 随机选择一个few_shot数据
@@ -229,6 +272,51 @@ class FewShotTestDataset:
     def __len__(self):
         return len(self.sample_list)
 
+
+# class FewShotTestDataset:
+
+#     def __init__(self,
+#                  trainset_dir,
+#                  few_shot_dir,
+#                  num_shot,
+#                  *args,
+#                  **kwargs):
+#         """
+#         Initialize the Dataset object.
+
+#         Args:
+#             dataset_dir (str): The directory path of the dataset.
+#         """
+#         self.trainset_dir = trainset_dir
+#         self.few_shot_dir = few_shot_dir
+#         self.num_shot = num_shot
+#         self.noisy_dataset = SeparDataset(trainset_dir, only_clean = True)
+#         self.few_shot_data_list = os.listdir(os.path.join(few_shot_dir, "audio"))
+    
+#     def __getitem__(self, index):
+
+#         # 随机选择一个few_shot数据
+#         few_shot_index = index
+#         few_shot_data_file = self.few_shot_data_list[few_shot_index]
+#         noisy = self.noisy_dataset[index]
+
+#         clean_audio, _ = torchaudio.load(os.path.join(self.few_shot_dir,
+#                                                       "audio",
+#                                                       few_shot_data_file))
+
+#         radar_file = os.path.join(self.few_shot_dir,
+#                                   "radar",
+#                                   few_shot_data_file.replace("wav", "npy"))
+
+#         mix_audio = random_mix_audio(clean_audio, noisy)
+#         label = int(few_shot_data_file.split("_")[0])
+
+#         radar = torch.tensor(np.load(radar_file),
+#                              dtype = torch.float32)
+#         return radar, clean_audio, mix_audio, torch.tensor(label)
+
+#     def __len__(self):
+#         return len(self.few_shot_data_list)
 
 class FewShotInitDataset:
 

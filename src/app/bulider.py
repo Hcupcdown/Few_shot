@@ -2,10 +2,17 @@ import torch
 from torch.utils.data import DataLoader
 
 from data import FewShotDataset, FewShotInitDataset, FewShotTestDataset, LibriDataset
+from data.dataset import IGNLibriDataset
 from model import RadarMossFormer
 
 from .sep_train import SepTester, SepTrainer
 
+
+def freeze_select(p_name):
+    if "person_embedding" in p_name or "radar_net.adpter" in p_name:
+        return False
+    else:
+        return True
 
 def collate_fn(batch):
     batch = [x for x in zip(*batch)]
@@ -21,20 +28,19 @@ def collate_fn(batch):
 def build_dataloader(args):
     val_loader = None
     if args.few_shot:
-        val_dataset = FewShotTestDataset(args.few_shot_dataset['valset_dir'])
+        val_dataset = FewShotTestDataset(args.few_shot_val)
         val_loader    = DataLoader(val_dataset,
-                               batch_size=1,
-                               shuffle=False,
-                               num_workers=args.num_worker,
-                               collate_fn=collate_fn)
+                                   batch_size=1,
+                                   shuffle=False,
+                                   num_workers=args.num_worker,
+                                   collate_fn=collate_fn)
    
     dataloader = {"val":val_loader}
     if args.action == "train":
         if args.few_shot:
             train_dataset = FewShotDataset(**args.few_shot_dataset)
         else:
-            train_dataset = LibriDataset(args.dataset_dir['train'],
-                                         r"E:\LibriMix\Libri2Mix\wav8k\max\train-360\mix_single")
+            train_dataset = IGNLibriDataset(r"G:\IGN_Libri2Mix\train-100")
         train_loader  = DataLoader(train_dataset,
                                    batch_size=args.batch_size,
                                    shuffle=True,
@@ -59,12 +65,13 @@ def bulid_model(args):
 
     if args.action == "train" and args.few_shot:
         # freeze_model_parameters
+        unfreeze_list = []
         for p_name, param in model.named_parameters():
-            if "person_embedding" in p_name or "adpter" in p_name:
-                print("unfreeze:", p_name)
-                continue
-            param.requires_grad = False
-            print("freeze:", p_name)
+            if freeze_select(p_name):
+                param.requires_grad = False
+            else:
+                unfreeze_list.append(p_name)
+        print("unfreeze:\n", unfreeze_list)
         model = model.to(args.device)
         init_datset = FewShotInitDataset(args.few_shot_dataset['few_shot_dir'],
                                          args.few_shot_dataset['num_shot'])
@@ -83,6 +90,7 @@ def bulid_model(args):
         new_embedding = torch.cat(new_embedding,0)
         init_embedding = torch.mean(new_embedding,0)
         model.radar_net.init_embedding(init_embedding, label)
+        print("init embedding success!")
 
     model.to(args.device)
     return model
