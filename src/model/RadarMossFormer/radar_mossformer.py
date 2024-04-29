@@ -2,7 +2,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..Mossformer.mossformer import GLU, FusionGLU, MossFormerBlock, ScaledSinuEmbedding
+from ..Mossformer.mossformer import (
+    GLU,
+    FusionGLULiner,
+    MossFormerBlock,
+    ScaledSinuEmbedding,
+)
 from .cross_flash import CorssFLASHTransformer
 from .radar_net import RadarNet
 
@@ -41,30 +46,29 @@ class RadarMossFormer(nn.Module):
         )
         self.ln1 = nn.LayerNorm(hidden_dim)
         self.abs_pos_emb = ScaledSinuEmbedding(hidden_dim)
-        self.in_point_wise_conv = nn.Conv1d(hidden_dim, hidden_dim, kernel_size=1)
-        for i in range(self.MFB_num1):
-            setattr(self, f"1_MFB_{i}", MossFormerBlock(dim=hidden_dim,
-                                                      group_size=256,
-                                                      query_key_dim=128,
-                                                      expansion_factor=2.,
-                                                      dropout=drop_out_rate))
-        for i in range(self.MFB_num2):
-            setattr(self, f"2_MFB_{i}", MossFormerBlock(dim=hidden_dim,
-                                                      group_size=256,
-                                                      query_key_dim=128,
-                                                      expansion_factor=2.,
-                                                      dropout=drop_out_rate))
-        self.radar_net = RadarNet()
+        self.in_point_wise_conv = nn.Sequential(nn.Conv1d(hidden_dim, hidden_dim, kernel_size=1),
+                                                nn.ReLU())
+        self.mossforer_block1 = nn.Sequential()
+        self.mossforer_block2 = nn.Sequential()
+        for i in range(self.MFB_num):
+            self.mossforer_block1.add_module(f"1_MFB_{i}", MossFormerBlock(dim=hidden_dim,
+                                                                           group_size=256,
+                                                                           query_key_dim=128,
+                                                                           expansion_factor=2.,
+                                                                           dropout=drop_out_rate))
+            self.mossforer_block2.add_module(f"2_MFB_{i}", MossFormerBlock(dim=2*hidden_dim,
+                                                                            group_size=256,
+                                                                            query_key_dim=128,
+                                                                            expansion_factor=2.,
+                                                                            dropout=drop_out_rate))
+        self.radar_net = RadarNet(audio_channels=hidden_dim)
 
-        # fusion radar and audio
-        self.select_glu = FusionGLU(hidden_dim)
-        self.cross_flash = CorssFLASHTransformer(dim=hidden_dim,
-                                                 depth=2)
+        # fusion person_embedding and audio
+        self.select_glu = FusionGLULiner(hidden_dim)
         
-        # MossFormer structure
-        self.glu = GLU(hidden_dim)
+        self.glu = GLU(2*hidden_dim)
         self.out_point_wise_conv = nn.Sequential(
-            nn.Conv1d(hidden_dim, hidden_dim, kernel_size=1),
+            nn.Conv1d(hidden_dim*2, hidden_dim, kernel_size=1),
             nn.ReLU()
         )
         self.out_conv = nn.ConvTranspose1d(hidden_dim,
@@ -97,31 +101,20 @@ class RadarMossFormer(nn.Module):
         
         x_MFB_in = self.in_point_wise_conv(x_pos)
         x_MFB_in = x_MFB_in.transpose(-1, -2)
-        for i in range(self.MFB_num1):
-            x_MFB_in = getattr(self, f"1_MFB_{i}")(x_MFB_in)
-        x_MFB_out = x_MFB_in.transpose(-1, -2)
-        x_MFB_out = F.relu(x_MFB_out)
-        # end extract audio feature
+        x_MFB1_out = self.mossforer_block1(x_MFB_in)
 
-        # extract radar feature
-        if self.training:
-            time_feature, person_feature, embedding_loss = self.radar_net(radar, label)
-        else:
-            time_feature, person_feature = self.radar_net.inference(radar, label)
-            embedding_loss = None
+        person_logit, time_feature, person_feature,  = self.radar_net(radar,
+                                                                      x_MFB1_out.transpose(-1, -2),
+                                                                      label)
 
-        person_feature = person_feature.transpose(-1, -2)
-        x_extract = self.select_glu(x_MFB_out, person_feature)
-        time_feature = time_feature.transpose(-1, -2)
-        time_feature = F.interpolate(time_feature, x_extract.shape[-1], mode='nearest')
+        x_extract = self.select_glu(x_MFB1_out, person_feature)
+    
+        time_feature = F.interpolate(time_feature, x_extract.shape[-2], mode='nearest')
         # end extract radar feature
-
-        # fusion audio and radar
-        x_split = x_extract.transpose(-1, -2)
         time_feature = time_feature.transpose(-1, -2)
-        x_split = self.cross_flash(x_split, time_feature)
-        for i in range(self.MFB_num2):
-            x_split = getattr(self, f"2_MFB_{i}")(x_split)
+        x_split = torch.cat([x_extract, time_feature], dim=-1)
+
+        x_split = self.mossforer_block2(x_split)
         x_split = x_split.transpose(-1, -2)
         # end fusion audio and radar
 
@@ -129,4 +122,4 @@ class RadarMossFormer(nn.Module):
         x_split = self.glu(x_split)
         mask = self.out_point_wise_conv(x_split)
         split_sound =  self.out_conv(mask * x_in)[...,:in_len]
-        return split_sound, embedding_loss
+        return split_sound, person_logit

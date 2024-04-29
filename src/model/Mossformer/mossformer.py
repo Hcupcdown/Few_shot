@@ -39,6 +39,22 @@ class ScaledSinuEmbedding(nn.Module):
         return emb * self.scale
 
 
+class FusionGLULiner(nn.Module):
+    def __init__(self, dim) -> None:
+        super().__init__()
+        self.parallel_liner1 = nn.Linear(dim, dim)
+        self.parallel_liner2 = nn.Linear(dim, dim)
+        self.parallel_liner3 = nn.Linear(dim, dim)
+    
+    def forward(self, x1:torch.Tensor, x2:torch.Tensor=None) -> torch.Tensor:
+        if x2 is None:
+            x2 = x1
+        x1 = self.parallel_liner1(x1)
+        x2 = self.parallel_liner2(x2)
+        x = x1 * torch.sigmoid(x2)
+        x = self.parallel_liner3(x) * torch.sigmoid(x2)
+        return x
+
 class OffsetScale(nn.Module):
     def __init__(self, dim, heads = 1):
         super().__init__()
